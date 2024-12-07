@@ -4,6 +4,8 @@ Stub for homework 2
 
 import time
 import random
+from enum import Enum
+
 import numpy as np
 import mujoco
 from mujoco import viewer
@@ -14,7 +16,7 @@ import cv2
 from numpy.typing import NDArray
 
 
-TASK_ID = 1
+TASK_ID = 2
 
 
 world_xml_path = f"car_{TASK_ID}.xml"
@@ -86,7 +88,6 @@ def rotate_car(img):
 def go_forward(turn, img):
     height, width, _ = img.shape
     img_stripe_red_sum = np.sum(np.logical_and(img[:,:,0] > 100, np.logical_and(img[:,:,1] < 50, img[:,:,2] < 50)))
-    print(img_stripe_red_sum)
     if img_stripe_red_sum > 7000 and turn == 0:
         return True, {'forward': 0}
     elif img_stripe_red_sum > 2000 and turn == 0:
@@ -120,6 +121,86 @@ def task_1():
 
 
 # TODO: add addditional functions/classes for task 2 if needed
+class Stage(Enum):
+    ONE = 0,
+    TWO = 1,
+    THREE = 2,
+    FOUR = 3,
+    FIVE = 4,
+    SIX = 5,
+    SEVEN = 6,
+    EIGHT = 7,
+    NINE = 8,
+    TEN = 9
+
+def move_to_wall(i):
+    if i == 10:
+        return Stage.TWO, {'turn': 0, 'forward': 0}, i+1
+    else:
+        return Stage.ONE, {'turn': 0, 'forward': 1}, i+1
+
+def move_a_little_backwards(i):
+    if i == 10:
+        return Stage.THREE, {'turn': 0, 'forward': 0}, i+1
+    else:
+        return Stage.TWO, {'turn': 0, 'forward': -0.5}, i+1
+
+
+def localize_pole(img):
+    height, width, _ = img.shape
+    middle = width // 2
+    diff_arr = np.array(img[10:, middle, :], dtype=int) - np.array(img[:-10, middle, :], dtype=int)
+    diff_arr = diff_arr.reshape(470,-1,3)
+    diff_arr[diff_arr < 0] = 0
+    threshold = np.array([80, 80, 80])
+    condition = np.all(diff_arr > threshold, axis=(1,2))
+    if np.any(condition == True):
+        return Stage.FOUR, {'turn': 0, 'forward': 0}
+    else:
+        return Stage.THREE, {'turn': 0.1, 'forward': 0}
+
+
+def rotate_towards_blue_wall(img, stage_beg, stage_end):
+    height, width, _ = img.shape
+    calibration_index = int(18 / 30 * width)
+    right_img_red = np.array(img[:, calibration_index, 0], dtype=np.int_)
+    right_img_green = np.array(img[:, calibration_index, 1], dtype=np.int_)
+    right_img_blue = np.array(img[:, calibration_index, 2], dtype=np.int_)
+    right_img_red_blue = (right_img_red + right_img_blue)
+    if not (np.any(right_img_green > right_img_red_blue)):
+        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(0)
+        return stage_end, {'turn': 0, 'forward': 0}
+    else:
+        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(0)
+        return stage_beg, {'turn': 0.1, 'forward': 0}
+
+
+def move_a_little_forward(i, max_iter, stage_beg, stage_end):
+    if i == max_iter:
+        return stage_end, {'turn': 0, 'forward': 0}, i+1
+    else:
+        return stage_beg, {'turn': 0, 'forward': 1}, i+1
+
+
+def rotate_towards_green_wall(img):
+    height, width, _ = img.shape
+    calibration_index = int(18 / 30 * width)
+    right_img_red = np.array(img[:, calibration_index, 0], dtype=np.int_)
+    right_img_green = np.array(img[:, calibration_index, 1], dtype=np.int_)
+    right_img_blue = np.array(img[:, calibration_index, 2], dtype=np.int_)
+    right_img_red_green = (right_img_red + right_img_green)
+    if not (np.any(right_img_blue > right_img_red_green)):
+        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(0)
+        return Stage.SEVEN, {'turn': 0, 'forward': 0}
+    else:
+        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(0)
+        return Stage.SIX, {'turn': 0.1, 'forward': 0}
+
+
 # /TODO
 
 def task_2():
@@ -130,10 +211,41 @@ def task_2():
 
     # TODO: Change the lines below.
     # For car control, you can use only sim_step function
-    for _ in range(100):
-        print(data.body("car").xpos)
-        print(data.body("target-ball").xpos)
-        controls = {"forward": 0, "turn": 0}
+    current_stage = Stage.ONE
+    s1 = 0
+    s2 = 0
+    s5 = 0
+    s7 = 0
+    s9 = 0
+    while True:
+        # print(data.body("car").xpos)
+        # print(data.body("target-ball").xpos)
+        match current_stage:
+            case Stage.ONE:
+                current_stage, controls, s1 = move_to_wall(s1)
+            case Stage.TWO:
+                current_stage, controls, s2 = move_a_little_backwards(s2)
+            case Stage.THREE:
+                current_stage, controls = localize_pole(img)
+            case Stage.FOUR:
+                current_stage, controls = rotate_towards_blue_wall(img, Stage.FOUR, Stage.FIVE)
+            case Stage.FIVE:
+                current_stage, controls, s5 = move_a_little_forward(s5, 50, Stage.FIVE, Stage.SIX)
+            case Stage.SIX:
+                current_stage, controls = rotate_towards_green_wall(img)
+            case Stage.SEVEN:
+                current_stage, controls, s7 = move_a_little_forward(s7, 50, Stage.SEVEN, Stage.EIGHT)
+            case Stage.EIGHT:
+                current_stage, controls = rotate_towards_blue_wall(img, Stage.EIGHT, Stage.NINE)
+            case Stage.NINE:
+                current_stage, controls, s9 = move_a_little_forward(s9, 50, Stage.NINE, Stage.TEN)
+            case Stage.TEN:
+                red, controls = rotate_car(img)
+                end, forward = go_forward(controls['turn'], img)
+                controls.update(forward)
+                if (end):
+                    break
+
         img = sim_step(20, view=True, **controls)
 
     # /TODO
