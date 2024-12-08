@@ -1,7 +1,7 @@
 """
 Stub for homework 2
 """
-
+import math
 import time
 import random
 from enum import Enum
@@ -16,7 +16,7 @@ import cv2
 from numpy.typing import NDArray
 
 
-TASK_ID = 2
+TASK_ID = 3
 
 
 world_xml_path = f"car_{TASK_ID}.xml"
@@ -107,8 +107,8 @@ def task_1():
     # TODO: Change the lines below.
     # For car control, you can use only sim_step function
     while True:
-        print('car: ', data.body("car").xpos)
-        print('ball: ', data.body("target-ball").xpos)
+        # print('car: ', data.body("car").xpos)
+        # print('ball: ', data.body("target-ball").xpos)
         red, controls = rotate_car(img)
         end, forward = go_forward(controls['turn'], img)
         controls.update(forward)
@@ -168,12 +168,8 @@ def rotate_towards_blue_wall(img, stage_beg, stage_end):
     right_img_blue = np.array(img[:, calibration_index, 2], dtype=np.int_)
     right_img_red_blue = (right_img_red + right_img_blue)
     if not (np.any(right_img_green > right_img_red_blue)):
-        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(0)
         return stage_end, {'turn': 0, 'forward': 0}
     else:
-        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(0)
         return stage_beg, {'turn': 0.1, 'forward': 0}
 
 
@@ -192,12 +188,8 @@ def rotate_towards_green_wall(img):
     right_img_blue = np.array(img[:, calibration_index, 2], dtype=np.int_)
     right_img_red_green = (right_img_red + right_img_green)
     if not (np.any(right_img_blue > right_img_red_green)):
-        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(0)
         return Stage.SEVEN, {'turn': 0, 'forward': 0}
     else:
-        # cv2.imshow('img', cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-        # cv2.waitKey(0)
         return Stage.SIX, {'turn': 0.1, 'forward': 0}
 
 
@@ -289,6 +281,36 @@ def get_dash_camera_intrinsics():
 
 
 # TODO: add addditional functions/classes for task 3 if needed
+def my_estimatePoseSingleMarkers(corners, marker_size, mtx, distortion):
+    marker_points = np.array([[-marker_size / 2, marker_size / 2, 0],
+                              [marker_size / 2, marker_size / 2, 0],
+                              [marker_size / 2, -marker_size / 2, 0],
+                              [-marker_size / 2, -marker_size / 2, 0]], dtype=np.float32)
+    trash = []
+    rvecs = []
+    tvecs = []
+    for c in corners:
+        nada, R, t = cv2.solvePnP(marker_points, c, mtx, distortion, False, cv2.SOLVEPNP_IPPE_SQUARE)
+        rvecs.append(R)
+        tvecs.append(t)
+        trash.append(nada)
+    return rvecs, tvecs, trash
+
+
+def find_teleport_coordinates(tvecs, ids):
+    x_d = 0
+    y_d = 0
+    for tvec, id in zip(tvecs, ids):
+        if id == 1:
+            tvec_flatten = tvec.reshape(-1)
+            radius = math.sqrt(tvec_flatten[0]**2 + tvec_flatten[2]**2)
+            view_angle = math.atan(tvec_flatten[0] / tvec_flatten[2])
+            angle = math.pi / 4 + view_angle
+            x_d = math.cos(angle) * radius
+            y_d = math.sin(angle) * radius
+    x_update = 1 + 0.3 - x_d - 0.1
+    y_update = 2 + 0.25 - y_d
+    return x_update, y_update
 # /TODO
 
 
@@ -301,9 +323,28 @@ def task_3():
     #  - use the dash camera and ArUco markers to precisely locate the car
     #  - move the car to the ball using teleport_by function
 
+    controls = {'dash cam rotate': -0.1}
+    img = sim_step(750, view=True, **controls)
+
+    controls = {'trapdoor close/open': 1}
+    sim_step(1000, view=True, **controls)
+
+    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+    detectorParams = cv2.aruco.DetectorParameters()
+    detectorParams.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+    detector = cv2.aruco.ArucoDetector(dictionary, detectorParams)
+
+    MARKER_SIDE = 0.08
+
+    corners, ids, _ = detector.detectMarkers(img)
+    img_draw = img.copy()
+    cv2.aruco.drawDetectedMarkers(img_draw, corners, ids)
+
+    camera_matrix, dist_coeffs = get_dash_camera_intrinsics()
+    rvecs, tvecs, _ = my_estimatePoseSingleMarkers(corners, MARKER_SIDE, camera_matrix, dist_coeffs)
+
     time.sleep(2)
-    x_dest = random.uniform(-0.2, 0.2)
-    y_dest = 1 + random.uniform(-0.2, 0.2)
+    x_dest, y_dest = find_teleport_coordinates(tvecs, ids)
 
     teleport_by(x_dest, y_dest)
     time.sleep(2)
@@ -316,6 +357,18 @@ def task_3():
     # - the car should be already close to the ball
     # - use the gripper to grab the ball
     # - you can move the car as well if you need to
+    controls = {'lift': 1}
+    sim_step(1000, view=True, **controls)
+    controls = {'forward': -0.1}
+    sim_step(10, view=True, **controls)
+    controls = {'trapdoor close/open': -1}
+    sim_step(1000, view=True, **controls)
+    controls = {'lift': -1}
+    sim_step(1000, view=True, **controls)
+    controls = {'trapdoor close/open': 1}
+    sim_step(1000, view=True, **controls)
+    controls = {'lift': 1}
+    sim_step(1000, view=True, **controls)
     # /TODO
 
     assert ball_grab()
