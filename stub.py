@@ -16,7 +16,7 @@ import cv2
 from numpy.typing import NDArray
 
 
-TASK_ID = 3
+TASK_ID = 1
 
 
 world_xml_path = f"car_{TASK_ID}.xml"
